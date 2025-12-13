@@ -1,0 +1,3 @@
+# Git ignore file added by assistant
+venv/
+.venv/
