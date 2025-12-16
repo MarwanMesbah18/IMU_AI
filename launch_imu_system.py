@@ -73,20 +73,17 @@ def main():
     
     try:
         # Start web sensor bridge (mobile interface)
+        # Start web sensor bridge (mobile interface)
         print("📱 Launching Mobile Sensor Bridge...")
         bridge_process = subprocess.Popen(
-            [sys.executable, "scripts/web_sensor_bridge.py"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            [sys.executable, "scripts/web_sensor_bridge.py"]
         )
         time.sleep(2)  # Give it time to start
         
         # Start Streamlit webapp
         print("🖥️  Launching Streamlit Webapp...")
         streamlit_process = subprocess.Popen(
-            [sys.executable, "-m", "streamlit", "run", "scripts/part8_webapp.py"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            [sys.executable, "-m", "streamlit", "run", "scripts/part8_webapp.py"]
         )
         time.sleep(3)  # Give Streamlit time to start
         

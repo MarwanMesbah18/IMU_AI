@@ -139,8 +139,8 @@ HTML_PAGE = """
             const y = acc.y || 0;
             const z = acc.z || 0;
 
-            // 1. Update UI (Low Priority - 2Hz)
-            if (now - lastUiUpdate > 500) {
+            // 1. Update UI (Smoother - 10Hz)
+            if (now - lastUiUpdate > 100) {
                 valX.innerText = x.toFixed(2);
                 valY.innerText = y.toFixed(2);
                 valZ.innerText = z.toFixed(2);
