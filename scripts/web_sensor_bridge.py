@@ -119,6 +119,7 @@ HTML_PAGE = """
     <script>
         let isRunning = false;
         let lastSendTime = 0;
+        let lastUiUpdate = 0;
         const SEND_INTERVAL = 20; // ms (Target ~50Hz for Model)
         
         const statusBox = document.getElementById('statusBox');
@@ -127,38 +128,37 @@ HTML_PAGE = """
         const valY = document.getElementById('valY');
         const valZ = document.getElementById('valZ');
 
+        let isSendingData = false;
+
         function handleMotion(event) {
             if (!isRunning) return;
 
-            // Get Acceleration including gravity (usually what we want for IMU apps)
-            // Or acceleration including gravity? 
-            // Streamlit part8 usually expects raw accelerometer values (m/s^2), which includes gravity.
-            
-            // event.accelerationIncludingGravity (x, y, z)
             const acc = event.accelerationIncludingGravity;
-            
-            if (!acc) return;
-
-            // Update UI
+            const now = Date.now();
             const x = acc.x || 0;
             const y = acc.y || 0;
             const z = acc.z || 0;
 
-            valX.innerText = x.toFixed(2);
-            valY.innerText = y.toFixed(2);
-            valZ.innerText = z.toFixed(2);
+            // 1. Update UI (Low Priority - 2Hz)
+            if (now - lastUiUpdate > 500) {
+                valX.innerText = x.toFixed(2);
+                valY.innerText = y.toFixed(2);
+                valZ.innerText = z.toFixed(2);
+                lastUiUpdate = now;
+            }
 
-            // Throttle Sending
-            const now = Date.now();
-            if (now - lastSendTime > SEND_INTERVAL) {
+            // 2. Send Data (Network Safe Mode)
+            // Only send if the previous request is DONE.
+            // This prevents "Connection queue" freezes in mobile browsers.
+            if (!isSendingData && (now - lastSendTime > SEND_INTERVAL)) {
                 sendData(x, y, z);
                 lastSendTime = now;
             }
         }
 
         async function sendData(x, y, z) {
+            isSendingData = true;
             try {
-                // Post to our own backend
                 await fetch('/data', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -170,6 +170,8 @@ HTML_PAGE = """
                 });
             } catch (e) {
                 console.error("Send failed", e);
+            } finally {
+                isSendingData = false;
             }
         }
 

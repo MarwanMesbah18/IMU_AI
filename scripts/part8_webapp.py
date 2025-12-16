@@ -12,6 +12,8 @@ from scipy.fft import fft, fftfreq
 HOST = '0.0.0.0'
 PORT = 65432
 MODEL_PATH = 'models/best_model.pkl'
+WINDOW_SIZE = 100
+OVERLAP = 50
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -164,8 +166,8 @@ with col2:
 if 'buffer' not in st.session_state:
     st.session_state.buffer = []
     
-if 'plot_data' not in st.session_state:
-    st.session_state.plot_data = pd.DataFrame(columns=['x', 'y', 'z'])
+if 'plot_buffer' not in st.session_state:
+    st.session_state.plot_buffer = []
 
 if 'packet_count' not in st.session_state:
     st.session_state.packet_count = 0
@@ -201,31 +203,31 @@ stop_button = st.button("Stop Server (Refresh to Restart)")
 placeholder_status = st.empty()
 
 if not stop_button:
-    print("🚀 Server Loop Started")
+    current_x, current_y, current_z = 0.0, 0.0, 0.0
+    print("🚀 Server Loop Started (Simple Mode)")
+    
+    # Simple, robust loop
     while True:
-        # 1. Drain Queue (Read ALL available packets to fix lag)
-        packets = []
+        # Check for stop
+        if stop_button:
+            break
+
+        # 1. Try to get ONE packet (Non-blocking)
         try:
-            while True:
-                data, addr = st.session_state.sock.recvfrom(1024)
-                packets.append(data)
-                # Cap burst to avoid freezing if flooding
-                if len(packets) > 100: 
-                    break 
+            data, addr = st.session_state.sock.recvfrom(4096) # Bigger buffer
+            has_data = True
         except BlockingIOError:
-            pass # No more data
+            has_data = False
+            time.sleep(0.01) # Sleep if no data to be nice to CPU
         except Exception as e:
-            print(f"Socket Error: {e}")
-        
-        # 2. Process Packets (use only LAST packet to reduce delay)
-        if packets:
-            # print(f"Received {len(packets)} packets") # Debug
-            current_x, current_y, current_z = 0, 0, 0
-            
-            # Use only the LAST packet from the batch for better performance
-            data = packets[-1]
+            print(f"Socket error: {e}")
+            has_data = False
+            time.sleep(0.1)
+
+        if has_data:
             try:
                 msg = data.decode('utf-8')
+                # Parse
                 try:
                     j = json.loads(msg)
                     x, y, z = j.get('acc_x', 0), j.get('acc_y', 0), j.get('acc_z', 0)
@@ -238,40 +240,57 @@ if not stop_button:
                     else:
                         x, y, z = 0, 0, 0
                 
-                # Store latest for display
-                current_x, current_y, current_z = x, y, z
+                # Sanitize (Keep this, it's important)
+                if not (np.isfinite(x) and np.isfinite(y) and np.isfinite(z)):
+                    x, y, z = 0.0, 0.0, 0.0
                 
-                # Add to buffer and plot data
+                # Clamp
+                LIMIT_VAL = 200.0
+                x = max(-LIMIT_VAL, min(LIMIT_VAL, x))
+                y = max(-LIMIT_VAL, min(LIMIT_VAL, y))
+                z = max(-LIMIT_VAL, min(LIMIT_VAL, z))
+
+                # Update Buffer
                 st.session_state.buffer.append([x, y, z])
                 
-                # Add to plot data (use loc to avoid FutureWarning)
-                new_row = pd.DataFrame([[x, y, z]], columns=['x', 'y', 'z'])
-                st.session_state.plot_data = pd.concat([st.session_state.plot_data, new_row], ignore_index=True)
+                # Update Plot Buffer (List)
+                if 'plot_buffer' not in st.session_state:
+                    st.session_state.plot_buffer = []
+                st.session_state.plot_buffer.append({'x': x, 'y': y, 'z': z})
                 
-                # Trim
-                LIMIT = 200
-                if len(st.session_state.plot_data) > LIMIT:
-                    st.session_state.plot_data = st.session_state.plot_data.iloc[-LIMIT:]
+                # Trim Buffers
+                if len(st.session_state.plot_buffer) > 200:
+                    st.session_state.plot_buffer.pop(0) # Simple pop
                 
+                # Current values for display
+                current_x, current_y, current_z = x, y, z
+                st.session_state.packet_count += 1
+
             except Exception as e:
-                print(f"Data Process Error: {e}")
+                print(f"Process Error: {e}")
+
+        # 2. Update UI (Periodic)
+        current_time = time.time()
+        if current_time - st.session_state.last_ui_update >= 0.1: # 10 FPS is enough
             
-            # 3. Update UI (Throttled to max 20 FPS = 50ms)
-            current_time = time.time()
-            if current_time - st.session_state.last_ui_update >= 0.05:
-                chart_placeholder.line_chart(st.session_state.plot_data)
-                st.session_state.last_ui_update = current_time
+            if 'plot_buffer' in st.session_state and st.session_state.plot_buffer:
+                df_plot = pd.DataFrame(st.session_state.plot_buffer)
+                chart_placeholder.line_chart(df_plot)
             
-                st.session_state.packet_count += len(packets)
-                debug_placeholder.markdown(
-                    f"""
-                    <div style='background-color: #262730; padding: 10px; border-radius: 5px; font-size: 0.8em;'>
-                    <b>Status:</b> 🟢 Receiving<br>
-                    <b>Packets:</b> {st.session_state.packet_count}<br>
-                    <b>Latest (m/s²):</b><br>X: {current_x:.2f} Y: {current_y:.2f} Z: {current_z:.2f}
-                    </div>
-                    """, unsafe_allow_html=True
-                )
+            st.session_state.last_ui_update = current_time
+            
+            debug_placeholder.markdown(
+                f"""
+                <div style='background-color: #262730; padding: 10px; border-radius: 5px; font-size: 0.8em;'>
+                <b>Status:</b> 🟢 Receiving<br>
+                <b>Packets:</b> {st.session_state.packet_count}<br>
+                <b>Latest:</b> X: {current_x:.2f} Y: {current_y:.2f} Z: {current_z:.2f}
+                </div>
+                """, unsafe_allow_html=True
+            )
+        
+        # 3. Predict logic (Periodic check)
+        if len(st.session_state.buffer) >= WINDOW_SIZE:
             
             # 4. HYBRID INFERENCE (Threshold + Model) - BALANCED MODE
             # Training used per-subject normalization we can't replicate, so use hybrid approach
@@ -335,7 +354,7 @@ if not stop_button:
                  st.session_state.buffer = st.session_state.buffer[-OVERLAP:]
         
         # Always yield control slightly to keep UI responsive
-        time.sleep(0.001) 
+        time.sleep(0.02) 
             
 else:
     st.write("Server Stopped.")
