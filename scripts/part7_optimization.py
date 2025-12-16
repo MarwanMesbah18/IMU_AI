@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import shap
 import joblib
+import os
 from sklearn.base import clone
 from sklearn.ensemble import VotingClassifier, RandomForestClassifier, GradientBoostingClassifier
 from sklearn.neural_network import MLPClassifier
@@ -48,8 +49,9 @@ else:
     best_model_to_save = best_model # From Part 6
 
 # Save the best model for the Web App
-print(f"\n   Saving best model to 'best_model.pkl'...")
-joblib.dump(best_model_to_save, 'best_model.pkl')
+os.makedirs('models', exist_ok=True) # Ensure 'models' directory exists
+print(f"\n   Saving best model to 'models/best_model.pkl'...")
+joblib.dump(best_model_to_save, 'models/best_model.pkl')
 print("   Model saved successfully!")
 
 # 2. Cross-Validation (Robustness Check)

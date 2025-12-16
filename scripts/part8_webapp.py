@@ -10,7 +10,7 @@ from scipy.fft import fft, fftfreq
 # --- CONFIGURATION ---
 HOST = '0.0.0.0'
 PORT = 65432
-MODEL_PATH = 'best_model.pkl'
+MODEL_PATH = 'models/best_model.pkl'
 
 # --- PAGE CONFIG ---
 st.set_page_config(
