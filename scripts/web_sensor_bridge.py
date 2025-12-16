@@ -1,6 +1,7 @@
 import socket
 import json
 import logging
+import atexit
 from flask import Flask, render_template_string, request, jsonify
 
 # Configure Logging
@@ -15,6 +16,16 @@ UDP_TARGET_PORT = 65432
 
 # Setup UDP Socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+# Register cleanup function
+def cleanup_socket():
+    try:
+        sock.close()
+        logger.info("UDP socket closed")
+    except:
+        pass
+
+atexit.register(cleanup_socket)
 
 # --- HTML TEMPLATE ---
 # Mobile-friendly generic sensor sender

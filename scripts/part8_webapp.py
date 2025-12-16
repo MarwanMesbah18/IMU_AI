@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import joblib
 import time
+import atexit
 from scipy.fft import fft, fftfreq
 
 # --- CONFIGURATION ---
@@ -164,15 +165,29 @@ if 'plot_data' not in st.session_state:
 if 'packet_count' not in st.session_state:
     st.session_state.packet_count = 0
 
+if 'last_ui_update' not in st.session_state:
+    st.session_state.last_ui_update = 0
+
 # Initialize Socket Once
 if 'sock' not in st.session_state:
     st.session_state.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # Enable socket reuse to prevent port occupation errors
+    st.session_state.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         st.session_state.sock.bind((HOST, PORT))
-    except OSError:
-        st.error(f"Error: Port {PORT} is occupied.")
+    except OSError as e:
+        st.error(f"Error: Port {PORT} is occupied. Try: `lsof -ti:{PORT} | xargs kill -9`")
         st.stop()
     st.session_state.sock.setblocking(False)
+    
+    # Register cleanup function
+    def cleanup_socket():
+        try:
+            if hasattr(st.session_state, 'sock'):
+                st.session_state.sock.close()
+        except:
+            pass
+    atexit.register(cleanup_socket)
 
 # UI Elements for Loop
 stop_button = st.button("Stop Server (Refresh to Restart)")
@@ -194,86 +209,107 @@ if not stop_button:
         except BlockingIOError:
             pass # No more data
         
-        # 2. Process Packets
+        # 2. Process Packets (use only LAST packet to reduce delay)
         if packets:
             current_x, current_y, current_z = 0, 0, 0
             
-            for data in packets:
+            # Use only the LAST packet from the batch for better performance
+            data = packets[-1]
+            try:
+                msg = data.decode('utf-8')
                 try:
-                    msg = data.decode('utf-8')
-                    try:
-                        j = json.loads(msg)
-                        x, y, z = j.get('acc_x', 0), j.get('acc_y', 0), j.get('acc_z', 0)
-                        if x==0 and y==0 and z==0:
-                             x, y, z = j.get('x', 0), j.get('y', 0), j.get('z', 0)
-                    except:
-                        parts = msg.split(',')
-                        if len(parts) >= 3:
-                            x, y, z = float(parts[0]), float(parts[1]), float(parts[2])
-                        else:
-                            continue
-                    
-                    # Store latest for display
-                    current_x, current_y, current_z = x, y, z
-                    
-                    # Add to history
-                    st.session_state.buffer.append([x, y, z])
-                    
-                    # Add to plot (maybe downsample? only add latest per batch?)
-                    # Adding every point makes plot accurate but potentially slow.
-                    # Let's add all points to chart data.
-                    # Creating DF row is slow.
-                    # append only the last one of the batch to plot_data? 
-                    # No, user wants to see the wave.
-                    # Compromise: Append via list concat then DF creation once per frame
+                    j = json.loads(msg)
+                    x, y, z = j.get('acc_x', 0), j.get('acc_y', 0), j.get('acc_z', 0)
+                    if x==0 and y==0 and z==0:
+                         x, y, z = j.get('x', 0), j.get('y', 0), j.get('z', 0)
                 except:
-                    continue
-            
-            # Batch update Plot Data
-            new_rows = []
-            for d in st.session_state.buffer[-len(packets):]:
-                new_rows.append(d)
+                    parts = msg.split(',')
+                    if len(parts) >= 3:
+                        x, y, z = float(parts[0]), float(parts[1]), float(parts[2])
+                    else:
+                        x, y, z = 0, 0, 0
                 
-            new_df = pd.DataFrame(new_rows, columns=['x', 'y', 'z'])
-            st.session_state.plot_data = pd.concat([st.session_state.plot_data, new_df], ignore_index=True)
+                # Store latest for display
+                current_x, current_y, current_z = x, y, z
+                
+                # Add to buffer and plot data
+                st.session_state.buffer.append([x, y, z])
+                
+                # Add to plot data
+                new_row = pd.DataFrame([[x, y, z]], columns=['x', 'y', 'z'])
+                st.session_state.plot_data = pd.concat([st.session_state.plot_data, new_row], ignore_index=True)
+                
+                # Trim
+                LIMIT = 200
+                if len(st.session_state.plot_data) > LIMIT:
+                    st.session_state.plot_data = st.session_state.plot_data.iloc[-LIMIT:]
+                
+            except Exception as e:
+                pass
             
-            # Trim
-            LIMIT = 200
-            if len(st.session_state.plot_data) > LIMIT:
-                st.session_state.plot_data = st.session_state.plot_data.iloc[-LIMIT:]
+            # 3. Update UI (Throttled to max 10 FPS = 100ms)
+            current_time = time.time()
+            if current_time - st.session_state.last_ui_update >= 0.1:
+                chart_placeholder.line_chart(st.session_state.plot_data)
+                st.session_state.last_ui_update = current_time
             
-            # 3. Update UI (Visuals) ONCE per loop
-            chart_placeholder.line_chart(st.session_state.plot_data)
+                st.session_state.packet_count += len(packets)
+                debug_placeholder.markdown(
+                    f"""
+                    <div style='background-color: #262730; padding: 10px; border-radius: 5px; font-size: 0.8em;'>
+                    <b>Status:</b> 🟢 Receiving<br>
+                    <b>Packets:</b> {st.session_state.packet_count}<br>
+                    <b>Latest (m/s²):</b><br>X: {current_x:.2f} Y: {current_y:.2f} Z: {current_z:.2f}
+                    </div>
+                    """, unsafe_allow_html=True
+                )
             
-            st.session_state.packet_count += len(packets)
-            debug_placeholder.markdown(
-                f"""
-                <div style='background-color: #262730; padding: 10px; border-radius: 5px; font-size: 0.8em;'>
-                <b>Status:</b> 🟢 Receiving<br>
-                <b>Packets:</b> {st.session_state.packet_count}<br>
-                <b>Latest (m/s²):</b><br>X: {current_x:.2f} Y: {current_y:.2f} Z: {current_z:.2f}
-                </div>
-                """, unsafe_allow_html=True
-            )
-            
-            # 4. Inference
+            # 4. Inference with improved threshold logic
             WINDOW_SIZE = 100
             OVERLAP = 50
             if len(st.session_state.buffer) >= WINDOW_SIZE:
                  window = st.session_state.buffer[-WINDOW_SIZE:]
                  try:
-                     feats = extract_realtime_features(window)
-                     if model:
+                     # Calculate metrics for "still" detection
+                     window_arr = np.array(window)
+                     mag = np.sqrt(np.sum(window_arr**2, axis=1))
+                     mag_std = np.std(mag)
+                     
+                     # Also check raw acceleration variance (better metric for movement)
+                     raw_std = np.std(window_arr, axis=0)  # std per axis
+                     raw_std_mean = np.mean(raw_std)
+                     
+                     # Very conservative threshold: only classify as "still" if BOTH are very low
+                     # Lower threshold from 0.5 to 0.12 to reduce false positives
+                     if mag_std < 0.12 and raw_std_mean < 0.20:
+                         pred_class = "still"
+                         confidence = "threshold"
+                     elif model:
+                         feats = extract_realtime_features(window)
                          pred_class = model.predict(feats)[0]
-                         activity_placeholder.markdown(
-                             f"""<div class='metric-card'>
-                                 <div style='color: #aaa'>Detected</div>
-                                 <div class='activity-text'>{pred_class.upper()}</div>
-                                </div>""", 
-                             unsafe_allow_html=True
-                         )
-                 except:
-                     pass
+                         # Try to get prediction probability if available
+                         try:
+                             proba = model.predict_proba(feats)[0]
+                             confidence = f"{max(proba)*100:.0f}%"
+                         except:
+                             confidence = "model"
+                     else:
+                         pred_class = "unknown"
+                         confidence = "N/A"
+                     
+                     activity_placeholder.markdown(
+                         f"""<div class='metric-card'>
+                             <div style='color: #aaa'>Detected</div>
+                             <div class='activity-text'>{pred_class.upper()}</div>
+                             <div style='color: #666; font-size: 0.7em; margin-top: 5px;'>
+                             Conf: {confidence}<br>
+                             Mag σ: {mag_std:.3f} | Raw σ: {raw_std_mean:.3f}
+                             </div>
+                            </div>""", 
+                         unsafe_allow_html=True
+                     )
+                 except Exception as e:
+                     activity_placeholder.markdown(f"<div style='color: red'>Error: {str(e)}</div>", unsafe_allow_html=True)
                  st.session_state.buffer = st.session_state.buffer[OVERLAP:]
                  
         else:
