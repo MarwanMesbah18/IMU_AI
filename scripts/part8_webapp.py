@@ -201,6 +201,7 @@ stop_button = st.button("Stop Server (Refresh to Restart)")
 placeholder_status = st.empty()
 
 if not stop_button:
+    print("🚀 Server Loop Started")
     while True:
         # 1. Drain Queue (Read ALL available packets to fix lag)
         packets = []
@@ -209,13 +210,16 @@ if not stop_button:
                 data, addr = st.session_state.sock.recvfrom(1024)
                 packets.append(data)
                 # Cap burst to avoid freezing if flooding
-                if len(packets) > 50: 
+                if len(packets) > 100: 
                     break 
         except BlockingIOError:
             pass # No more data
+        except Exception as e:
+            print(f"Socket Error: {e}")
         
         # 2. Process Packets (use only LAST packet to reduce delay)
         if packets:
+            # print(f"Received {len(packets)} packets") # Debug
             current_x, current_y, current_z = 0, 0, 0
             
             # Use only the LAST packet from the batch for better performance
@@ -240,7 +244,7 @@ if not stop_button:
                 # Add to buffer and plot data
                 st.session_state.buffer.append([x, y, z])
                 
-                # Add to plot data
+                # Add to plot data (use loc to avoid FutureWarning)
                 new_row = pd.DataFrame([[x, y, z]], columns=['x', 'y', 'z'])
                 st.session_state.plot_data = pd.concat([st.session_state.plot_data, new_row], ignore_index=True)
                 
@@ -250,11 +254,11 @@ if not stop_button:
                     st.session_state.plot_data = st.session_state.plot_data.iloc[-LIMIT:]
                 
             except Exception as e:
-                pass
+                print(f"Data Process Error: {e}")
             
-            # 3. Update UI (Throttled to max 10 FPS = 100ms)
+            # 3. Update UI (Throttled to max 20 FPS = 50ms)
             current_time = time.time()
-            if current_time - st.session_state.last_ui_update >= 0.1:
+            if current_time - st.session_state.last_ui_update >= 0.05:
                 chart_placeholder.line_chart(st.session_state.plot_data)
                 st.session_state.last_ui_update = current_time
             
@@ -329,10 +333,9 @@ if not stop_button:
                  
                  # Keep last OVERLAP samples, slide window by (WINDOW_SIZE - OVERLAP)
                  st.session_state.buffer = st.session_state.buffer[-OVERLAP:]
-                 
-        else:
-            # No data
-            time.sleep(0.01) # Short sleep to prevent CPU spin
+        
+        # Always yield control slightly to keep UI responsive
+        time.sleep(0.001) 
             
 else:
     st.write("Server Stopped.")
