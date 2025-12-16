@@ -33,7 +33,7 @@ dropped_rows = len(df_drop)
 percent_lost = ((initial_rows - dropped_rows) / initial_rows) * 100
 print(f"Strategy C (Drop Rows) - Data lost: {percent_lost:.2f}%")
 
-# Questions to Answer:
+# Questions
 print("\n--- Questions to Answer (Task 2.1) ---")
 print("a) Which strategy preserves the most data?")
 if percent_lost > 0:

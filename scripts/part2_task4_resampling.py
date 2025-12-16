@@ -16,20 +16,49 @@ if 'df' not in locals():
 
 print("\n--- Task 2.4: Timestamp Sorting and Resampling ---")
 
-# 1. Sort by timestamp
-df = df.sort_values(by='timestamp')
+# 2. Set timestamp as index and sort
+df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+df = df.sort_values('timestamp')
+df = df.set_index('timestamp')
 
-# 2. Set Timestamp as Index
-# Helper to convert if not already
-df['datetime'] = pd.to_datetime(df['timestamp'], unit='s')
-df = df.set_index('datetime')
-print("Index set to Datetime.")
+# Check for duplicates
+if df.index.duplicated().any():
+    print(f"Duplicate timestamps found: {df.index.duplicated().sum()}")
+    # We must aggregate duplicates BEFORE resampling to avoid reindexing errors
+    # Split numeric and categorical
+    numeric_cols = ['acc_x', 'acc_y', 'acc_z']
+    cat_cols = ['label', 'subject']
+    
+    # Aggregate Numeric -> Mean
+    # numeric_only=True avoids the TypeError if other cols exist
+    df_num = df[numeric_cols].groupby(level=0).mean()
+    
+    # Aggregate Categorical -> First
+    # Check if cols exist (subject might be numeric but label is str)
+    present_cat_cols = [c for c in cat_cols if c in df.columns]
+    if present_cat_cols:
+        df_cat = df[present_cat_cols].groupby(level=0).first()
+        df = pd.concat([df_num, df_cat], axis=1)
+    else:
+        df = df_num
+else:
+    # No duplicates, just proceed
+    pass
 
+# Now df is unique-indexed.
 # 3. Resample to 50 Hz (20ms)
-# We use mean() to downsample if needed, or just reindex if we want strict grid.
-# The prompt asks to "Resample ... using appropriate interpolation".
-# First resample to grid, taking mean of bin if multiple, then interpolate gaps.
-df_resampled = df.resample('20ms').mean(numeric_only=True) # 50Hz = 20ms period
+if 'label' in df.columns and 'subject' in df.columns:
+    df_numeric = df[['acc_x', 'acc_y', 'acc_z']]
+    df_cat = df[['label', 'subject']]
+    
+    df_numeric_res = df_numeric.resample('20ms').mean().interpolate(method='linear')
+    df_cat_res = df_cat.resample('20ms').ffill()
+    
+    df_final = pd.concat([df_numeric_res, df_cat_res], axis=1)
+else:
+    df_final = df[['acc_x', 'acc_y', 'acc_z']].resample('20ms').mean().interpolate(method='linear')
+
+df_final = df_final.dropna()
 
 # Handle categorical columns (label/subject) if they are lost during mean()
 # Typically we might take `first` or `mode` for labels.
@@ -39,21 +68,14 @@ df_resampled = df.resample('20ms').mean(numeric_only=True) # 50Hz = 20ms period
 # Let's check gap size.
 
 # Check gaps in original data before full interpolation
-original_diffs = df['timestamp'].diff()
-max_gap = original_diffs.max()
+# Check gaps in original data before full interpolation - using the index
+original_diffs = df.index.to_series().diff()
+max_gap = original_diffs.max().total_seconds()
 print(f"Max gap in original data: {max_gap} seconds")
 
-# If we just interpolate everything:
-df_resampled_interp = df_resampled.interpolate(method='time') # Time-weighted interpolation
-
-# But if there's a big gap, maybe we shouldn't fill it with logic data?
-# Task question: "How should the major gap be handled?"
-# If gap > e.g. 5 seconds, it's likely a pause.
-# We will interpolate for the sake of the 'continuous' requirement but note the strategy.
-
-# Let's stick to the 'interpolate' instruction but maybe limit it if it's huge?
-# Standard approach:
-df_final = df_resampled_interp.copy() # Or df_resampled.interpolate(method='time', limit=...)
+# 4. Handle major gap
+# If there is a massive gap, plotting it will show a straight line.
+# We'll visualize it.
 
 # 4. Handle major gap
 # If there is a massive gap, plotting it will show a straight line.
@@ -90,3 +112,4 @@ else:
 # Save cleaning state if needed or for notebook flow
 df = df_final
 print(f"Final Info: {df.shape}")
+print(f"Columns: {df.columns.tolist()}")

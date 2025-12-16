@@ -33,7 +33,7 @@ final_len = len(df)
 print(f"Removed {initial_len - final_len} duplicates. New shape: {df.shape}")
 
 # Questions
-print("\n--- Questions to Answer (Task 2.3) ---")
+print("\n--- Questions (Task 2.3) ---")
 print(f"a) How many exact duplicates exist? {exact_dupes}")
 print(f"b) How many measurement duplicates exist? {measurement_dupes}")
 print("c) Should duplicate removal happen before or after sorting?")

@@ -82,7 +82,7 @@ for name, d in [('Original', df), ('Removal', df_removed), ('Clipping', df_clipp
     print(d[axes].agg(['mean', 'std']))
 
 # Questions
-print("\n--- Questions to Answer (Task 2.2) ---")
+print("\n--- Questions (Task 2.2) ---")
 print("a) How many outliers detected by Z-score vs IQR?")
 print(f"   Z-score Total: {z_outliers.sum().sum()}, IQR Total: {iqr_outliers.sum().sum()}")
 print("   (IQR typically detects more in non-normal distributions).")
