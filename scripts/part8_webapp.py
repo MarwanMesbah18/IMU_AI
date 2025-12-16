@@ -77,7 +77,7 @@ with st.sidebar:
         st.error("❌ Model Missing")
 
     st.divider()
-    st.write("### 📲 How to Connect")
+    st.write("### How to Connect")
     st.markdown("""
     1. Ensure phone & PC are on same Wi-Fi.
     2. Run `web_sensor_bridge.py` in terminal.
@@ -85,11 +85,16 @@ with st.sidebar:
     4. Click 'Start Stream'.
     """)
 
-# --- FEATURE EXTRACTION (Simplified for brevity, same logic) ---
+# --- FEATURE EXTRACTION (Matches Part 5 logic) ---
 def extract_realtime_features(window_data):
-    X = np.array(window_data)
+    """
+    Extract features from a 100-sample window.
+    NOTE: Training used per-subject global normalization which we can't replicate in real-time.
+    Using raw features + threshold approach instead.
+    """
+    X = np.array(window_data)  # Shape: (100, 3) - RAW sensor data
     
-    # 1. Time Domain
+    # 1. Time Domain Features
     mean = np.mean(X, axis=0)
     std = np.std(X, axis=0)
     mins = np.min(X, axis=0)
@@ -103,7 +108,7 @@ def extract_realtime_features(window_data):
     mag_mean = np.mean(mag)
     mag_std = np.std(mag)
     
-    # 2. Frequency Domain
+    # 2. Frequency Domain Features
     sampling_rate = 50
     n_samples = len(X)
     freqs = fftfreq(n_samples, 1/sampling_rate)
@@ -143,7 +148,7 @@ def extract_realtime_features(window_data):
     return features.reshape(1, -1)
 
 # --- MAIN PAGE ---
-st.title("📡 Live Sensor Stream & AI Recognition")
+st.title("Live Sensor Stream & AI Recognition")
 
 col1, col2 = st.columns([2, 1])
 with col1:
@@ -264,53 +269,66 @@ if not stop_button:
                     """, unsafe_allow_html=True
                 )
             
-            # 4. Inference with improved threshold logic
-            WINDOW_SIZE = 100
-            OVERLAP = 50
+            # 4. HYBRID INFERENCE (Threshold + Model) - BALANCED MODE
+            # Training used per-subject normalization we can't replicate, so use hybrid approach
+            WINDOW_SIZE = 100  # 2 seconds at 50Hz (matches training)
+            OVERLAP = 50  # Keep 50, slide by 50 = predict every 50 samples = 1.0s (matches training!)
+            
             if len(st.session_state.buffer) >= WINDOW_SIZE:
                  window = st.session_state.buffer[-WINDOW_SIZE:]
                  try:
-                     # Calculate metrics for "still" detection
+                     # Calculate movement metrics
                      window_arr = np.array(window)
                      mag = np.sqrt(np.sum(window_arr**2, axis=1))
                      mag_std = np.std(mag)
+                     mag_mean = np.mean(mag)
                      
-                     # Also check raw acceleration variance (better metric for movement)
-                     raw_std = np.std(window_arr, axis=0)  # std per axis
-                     raw_std_mean = np.mean(raw_std)
+                     # Check variance (better metric than just magnitude)
+                     raw_variance = np.var(window_arr, axis=0)
+                     total_variance = np.sum(raw_variance)
                      
-                     # Very conservative threshold: only classify as "still" if BOTH are very low
-                     # Lower threshold from 0.5 to 0.12 to reduce false positives
-                     if mag_std < 0.12 and raw_std_mean < 0.20:
+                     # Smart threshold: phone truly still has very low variance
+                     # Based on raw data analysis: still has std ~0.5, total_variance < 1.0
+                     if mag_std < 0.8 and total_variance < 1.5:
                          pred_class = "still"
-                         confidence = "threshold"
+                         confidence = f"threshold"
+                         prob_display = "still: 95% (rule)"
                      elif model:
+                         # Trust model for active movements (walk/shake)
                          feats = extract_realtime_features(window)
                          pred_class = model.predict(feats)[0]
-                         # Try to get prediction probability if available
+                         
+                         # Get probabilities
                          try:
                              proba = model.predict_proba(feats)[0]
-                             confidence = f"{max(proba)*100:.0f}%"
+                             max_prob = max(proba)
+                             confidence = f"{max_prob*100:.0f}%"
+                             class_probs = {model.classes_[i]: f"{proba[i]*100:.0f}%" for i in range(len(model.classes_))}
+                             prob_display = " | ".join([f"{k}: {v}" for k, v in class_probs.items()])
                          except:
-                             confidence = "model"
+                             confidence = "N/A"
+                             prob_display = "N/A"
                      else:
-                         pred_class = "unknown"
+                         pred_class = "No Model"
                          confidence = "N/A"
+                         prob_display = "N/A"
                      
                      activity_placeholder.markdown(
                          f"""<div class='metric-card'>
-                             <div style='color: #aaa'>Detected</div>
                              <div class='activity-text'>{pred_class.upper()}</div>
-                             <div style='color: #666; font-size: 0.7em; margin-top: 5px;'>
-                             Conf: {confidence}<br>
-                             Mag σ: {mag_std:.3f} | Raw σ: {raw_std_mean:.3f}
+                             <div style='color: #666; font-size: 0.65em; margin-top: 8px;'>
+                             <b>Confidence:</b> {confidence}<br>
+                             <b>Probabilities:</b> {prob_display}<br>
+                             <b>Metrics:</b> Mag σ={mag_std:.3f} | Var={total_variance:.2f}
                              </div>
                             </div>""", 
                          unsafe_allow_html=True
                      )
                  except Exception as e:
                      activity_placeholder.markdown(f"<div style='color: red'>Error: {str(e)}</div>", unsafe_allow_html=True)
-                 st.session_state.buffer = st.session_state.buffer[OVERLAP:]
+                 
+                 # Keep last OVERLAP samples, slide window by (WINDOW_SIZE - OVERLAP)
+                 st.session_state.buffer = st.session_state.buffer[-OVERLAP:]
                  
         else:
             # No data
