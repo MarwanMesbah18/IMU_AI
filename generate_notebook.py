@@ -141,7 +141,27 @@ d) Are there any duplicate timestamps?""",
 1. Calculate correlation matrix.
 2. Identify highly correlated (>0.9).
 3. Compute feature importance (ANOVA).
-4. Select top 10 features."""
+4. Select top 10 features.""",
+
+    # PART 6
+    "6.1": """### Task 6.1: Baseline Models Training
+**Requirements:**
+1. Split Data (Stratified Shuffle 80/20).
+2. Train 5 Baseline Models (RF, SVM, kNN, GBM, MLP).
+3. Select best performer.""",
+
+    "6.2": """### Task 6.2: Model Evaluation
+**Requirements:**
+1. Evaluate Best Model (Accuracy, F1-Score).
+2. Plot Confusion Matrix.
+3. Check for overfitting.""",
+
+    # PART 7
+    "7.1": """### Part 7: Optimization & Explainability (The "Creative" Step)
+**Requirements:**
+1. Build Ensemble Voting Classifier (RF + GBM + MLP).
+2. Perform Cross-Validation to prove robustness.
+3. Use SHAP to explain model predictions visually."""
 }
 
 def create_markdown_cell(source):
@@ -221,8 +241,18 @@ from scipy import signal, stats
 from scipy.fft import fft, fftfreq
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.feature_selection import f_classif
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
+import joblib
+import shap
+import socket
+import json
+import time
 
-# Configure plotting
 # %matplotlib inline
 plt.rcParams['figure.figsize'] = (10, 6)
 """
@@ -305,6 +335,23 @@ nb['cells'].append(create_markdown_cell(requirements_text["5.2"]))
 split_and_add_grouped(nb, 'scripts/part5_task2_freq.py')
 nb['cells'].append(create_markdown_cell(requirements_text["5.3"]))
 split_and_add_grouped(nb, 'scripts/part5_task3_selection.py')
+
+# PART 6
+nb['cells'].append(create_markdown_cell("## Part 6: Classification"))
+nb['cells'].append(create_markdown_cell(requirements_text["6.1"]))
+split_and_add_grouped(nb, 'scripts/part6_task1_training.py')
+nb['cells'].append(create_markdown_cell(requirements_text["6.2"]))
+split_and_add_grouped(nb, 'scripts/part6_task2_evaluation.py')
+
+# PART 7
+nb['cells'].append(create_markdown_cell("## Part 7: Optimization & Explainability"))
+nb['cells'].append(create_markdown_cell(requirements_text["7.1"]))
+split_and_add_grouped(nb, 'scripts/part7_optimization.py')
+
+# PART 8
+# Removed as per user request to replace with external Web App
+# nb['cells'].append(create_markdown_cell("## Part 8: Real-Time Wireless Demo"))
+# ...
 
 # Save
 try:

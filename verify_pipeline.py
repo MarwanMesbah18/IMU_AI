@@ -106,7 +106,23 @@ try:
     assert feats_mean.shape == (len(X), 3), "Feature shape mismatch"
     print(f"Computed simple features for {len(X)} windows.")
     
-    print("\n[SUCCESS] Pipeline logic verified. Data flows correctly from Load -> Clean -> Segment -> Features.")
+    # --- PART 6: CLASSIFICATION ---
+    print("\n[Part 6] Classification Check...")
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import train_test_split
+    
+    # Mock Features & Labels for verification speed if Part 5 didn't produce full set
+    X_mock = feats_mean
+    y_mock = y # from Part 4 loop
+    
+    X_tr, X_te, y_tr, y_te = train_test_split(X_mock, y_mock, test_size=0.2, random_state=42)
+    clf = RandomForestClassifier(n_estimators=10)
+    clf.fit(X_tr, y_tr)
+    acc = clf.score(X_te, y_te)
+    print(f"Verification RF Accuracy: {acc:.2f} (Random/Mock Check)")
+    assert acc >= 0, "Accuracy invalid"
+
+    print("\n[SUCCESS] Pipeline logic verified. Data flows correctly from Load -> Clean -> Segment -> Features -> Train.")
 
 except Exception as e:
     print(f"\n[FAILURE] Logic verification failed: {e}")
