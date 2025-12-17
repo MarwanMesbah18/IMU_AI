@@ -42,21 +42,34 @@ else:
     print("   All strategies preserved all data (no missing values found?).")
 
 print("b) Plotting comparison for a segment with missing values...")
-# Find a segment with NaNs in original data
-nan_indices = df_orig[df_orig[axes].isnull().any(axis=1)].index
-if not nan_indices.empty:
-    sample_idx = nan_indices[0]
-    start = max(0, sample_idx - 10)
-    end = min(len(df_orig), sample_idx + 10)
+# Find a segment with NaNs in original data and identify which axis has the NaN
+nan_mask = df_orig[axes].isnull()
+if nan_mask.any().any():
+    # Find which axis has missing values
+    axis_to_plot = None
+    for axis in axes:
+        if nan_mask[axis].any():
+            axis_to_plot = axis
+            sample_idx = nan_mask[nan_mask[axis]].index[0]
+            break
     
-    plt.figure(figsize=(12, 6))
-    plt.plot(df_orig.iloc[start:end]['acc_x'], 'o-', label='Original', color='black', alpha=0.5)
-    plt.plot(df_ffill.iloc[start:end]['acc_x'], 'x--', label='Forward Fill', alpha=0.7)
-    plt.plot(df_interp.iloc[start:end]['acc_x'], 's--', label='Interpolation', alpha=0.7)
-    plt.title(f"Comparison of Missing Value Strategies (Sample around index {sample_idx})")
-    plt.legend()
-    plt.show()
-    print("   (Plot generated)")
+    if axis_to_plot:
+        start = max(0, sample_idx - 10)
+        end = min(len(df_orig), sample_idx + 10)
+        
+        plt.figure(figsize=(12, 6))
+        plt.plot(df_orig.iloc[start:end].index, df_orig.iloc[start:end][axis_to_plot], 'o-', label='Original', color='black', alpha=0.5)
+        plt.plot(df_ffill.iloc[start:end].index, df_ffill.iloc[start:end][axis_to_plot], 'x--', label='Forward Fill', alpha=0.7)
+        plt.plot(df_interp.iloc[start:end].index, df_interp.iloc[start:end][axis_to_plot], 's--', label='Interpolation', alpha=0.7)
+        plt.title(f"Comparison of Missing Value Strategies (Sample around index {sample_idx}, axis: {axis_to_plot})")
+        plt.xlabel('Index')
+        plt.ylabel('Acceleration')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+        print(f"   (Plot generated for {axis_to_plot})")
+    else:
+        print("   No missing values found to plot.")
 else:
     print("   No missing values found to plot.")
 
