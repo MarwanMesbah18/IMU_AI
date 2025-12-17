@@ -241,3 +241,42 @@ html {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--secondary-color);
 }
+
+/* Q&A Section Styling */
+.qa-container {
+    background: #ffffff;
+    border-left: 5px solid var(--secondary-color);
+    border-radius: 10px;
+    padding: 25px;
+    margin: 20px 0;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+}
+
+.qa-item {
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.qa-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.qa-question {
+    font-size: 1.15em;
+    font-weight: 600;
+    color: var(--text-dark);
+    margin-bottom: 10px;
+}
+
+.qa-answer {
+    font-size: 1.05em;
+    color: var(--text-light);
+    background-color: var(--light-bg);
+    padding: 15px;
+    border-radius: 8px;
+    line-height: 1.6;
+}
+
