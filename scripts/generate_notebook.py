@@ -157,11 +157,12 @@ d) Are there any duplicate timestamps?""",
 3. Check for overfitting.""",
 
     # PART 7
-    "7.1": """### Part 7: Optimization & Explainability (The "Creative" Step)
+    "7.1": """### Part 7: Optimization & Overfitting Checks
 **Requirements:**
-1. Build Ensemble Voting Classifier (RF + GBM + MLP).
-2. Perform Cross-Validation to prove robustness.
-3. Use SHAP to explain model predictions visually."""
+1. Perform **Grid Search** to optimize model hyperparameters (e.g., Random Forest).
+2. **Overfitting Check 1**: Calculate the gap between Cross-Validation Mean Score and Test Score.
+3. **Overfitting Check 2**: Plot **Learning Curves** to visualize Bias vs. Variance.
+4. Save the best model to `models/best_model.pkl`."""
 }
 
 def create_markdown_cell(source):
@@ -241,7 +242,7 @@ from scipy import signal, stats
 from scipy.fft import fft, fftfreq
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.feature_selection import f_classif
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score, GridSearchCV, learning_curve
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier

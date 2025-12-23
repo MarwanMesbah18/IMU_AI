@@ -1,110 +1,123 @@
-import numpy as np
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
-import shap
+from sklearn.model_selection import GridSearchCV, learning_curve
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
 import joblib
 import os
-from sklearn.base import clone
-from sklearn.ensemble import VotingClassifier, RandomForestClassifier, GradientBoostingClassifier
-from sklearn.neural_network import MLPClassifier
-from sklearn.model_selection import cross_val_score, StratifiedKFold
-from sklearn.metrics import accuracy_score
 
-if 'X_train' not in locals() or 'best_model' not in locals():
-    print("Warning: Dependencies from Part 6 not found. Run Part 6 first.")
-    # Mock for independent run
-    # X_train = ... 
-    # pass # Just exit or continue dangerously? 
-    # Better to just not run the rest if missing, but for flattening, we just assume.
+# Ensure dependencies from previous parts are available
+if 'X_train' not in locals() or 'y_train' not in locals():
+    print("Warning: Dependencies from Part 6 not found. This script expects X_train, y_train, X_test, y_test to be defined.")
+    # In a real notebook flow, these would be present.
+    # For independent testing, we might need to mock or load them.
     pass
 
-print("\n--- Part 7: Optimization & Explainability (The 'Creative' Step) ---")
-# Flattened logic below (lines 18+) need to be dedented.
+print("\n--- Part 7: Model Optimization & Overfitting Checks ---")
 
+# --- 1. Grid Search for Hyperparameter Tuning ---
+print("\n1. performing Grid Search to find the best hyperparameters...")
 
-# 1. Ensemble Voting (The "Super Model")
-# Combine the top performing types: RF (Variance), GBM (Bias), MLP (Non-linear)
-print("\n1. Building Ensemble Voting Classifier...")
+# We will optimize the Random Forest as it's usually a strong baseline.
+# You can easily swap this for another model if Part 6 showed something else was better.
+param_grid = {
+    'n_estimators': [50, 100, 200],
+    'max_depth': [None, 10, 20, 30],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4] # Adding leaf constraints helps reduce overfitting
+}
 
-clf1 = RandomForestClassifier(n_estimators=100, random_state=42)
-clf2 = GradientBoostingClassifier(n_estimators=100, random_state=42)
-clf3 = MLPClassifier(hidden_layer_sizes=(100,), max_iter=500, random_state=42)
+rf = RandomForestClassifier(random_state=42)
 
-eclf = VotingClassifier(
-    estimators=[('rf', clf1), ('gbm', clf2), ('mlp', clf3)],
-    voting='soft'
-)
+# 5-Fold Stratified Cross-Validation
+grid_search = GridSearchCV(estimator=rf, param_grid=param_grid, 
+                           cv=5, n_jobs=-1, verbose=1, scoring='accuracy')
 
-eclf.fit(X_train, y_train)
-y_pred_ens = eclf.predict(X_test)
-ens_acc = accuracy_score(y_test, y_pred_ens)
-print(f"   Ensemble Accuracy: {ens_acc:.4f}")
+if 'X_train' in locals():
+    grid_search.fit(X_train, y_train)
 
-if ens_acc > best_acc:
-    print(f"   Success! Ensemble improved over single best model ({best_acc:.4f} -> {ens_acc:.4f}).")
-    best_model_to_save = eclf
-else:
-    print(f"   Ensemble matched baseline. (Already near perfect at {best_acc:.2%}).")
-    best_model_to_save = best_model # From Part 6
+    best_params = grid_search.best_params_
+    best_score = grid_search.best_score_
+    best_model = grid_search.best_estimator_
 
-# Save the best model for the Web App
-os.makedirs('models', exist_ok=True) # Ensure 'models' directory exists
-print(f"\n   Saving best model to 'models/best_model.pkl'...")
-joblib.dump(best_model_to_save, 'models/best_model.pkl')
-print("   Model saved successfully!")
+    print(f"\n   Best Parameters found: {best_params}")
+    print(f"   Best Cross-Validation Accuracy (Mean): {best_score:.4f}")
 
-# 2. Cross-Validation (Robustness Check)
-# To answer "Is it overfitting?", we use 5-Fold CV.
-print("\n2. verifying Robustness (5-Fold Cross-Validation)...")
-cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-scores = cross_val_score(eclf, X_full, y_full, cv=cv, scoring='accuracy')
+    # Evaluate on Test Set
+    y_pred_optimized = best_model.predict(X_test)
+    test_acc_optimized = accuracy_score(y_test, y_pred_optimized)
+    print(f"   Test Set Accuracy (Optimized Model): {test_acc_optimized:.4f}")
 
-print(f"   Cross-Validation Scores: {scores}")
-print(f"   Mean Accuracy: {scores.mean():.4f} (+/- {scores.std() * 2:.4f})")
-print("   Consistency across folds proves the model is NOT overfitting to a specific split.")
+    # --- 2. Overfitting Check 1: CV Score vs Test Score Gap ---
+    print("\n2. Overfitting Check 1: CV vs. Test Score Gap")
+    
+    # Gap calculation
+    gap = best_score - test_acc_optimized
+    print(f"   CV Mean Score: {best_score:.4f}")
+    print(f"   Test Score:    {test_acc_optimized:.4f}")
+    print(f"   Gap:           {gap:.4f}")
 
-# 3. SHAP Explainability (The "Impressive" Viz)
-print("\n3. Generating SHAP Explanations (Why does it predict 'Jump'?)....")
-
-# Use TreeExplainer on the Random Forest part of the ensemble (fastest proxy)
-# Must fit the proxy for SHAP
-rf_proxy = RandomForestClassifier(n_estimators=100, random_state=42).fit(X_train, y_train)
-explainer = shap.TreeExplainer(rf_proxy)
-
-# Calculate SHAP values for test set (subset for speed)
-X_shap = X_test.iloc[:100] # Take 100 samples
-shap_values = explainer.shap_values(X_shap)
-
-# Summary Plot
-plt.figure(figsize=(12, 10))
-
-# Check if shap_values is a list (Multiclass) or array (Binary)
-if isinstance(shap_values, list):
-    print(f"   Multiclass output detected (List of {len(shap_values)} arrays). Plotting Class 0.")
-    vals_to_plot = shap_values[0]
-    class_name = rf_proxy.classes_[0]
-else:
-    print(f"   Binary/Single output detected (Array shape {shap_values.shape}).")
-    vals_to_plot = shap_values
-    # For binary, it usually explains the positive class (index 1)
-    if len(rf_proxy.classes_) == 2:
-         class_name = rf_proxy.classes_[1]
+    if gap > 0.10:
+        print("   WARNING: High Variance! The model performs significantly better on training/CV data than test data.")
+        print("   Action: Try increasing regularization (e.g., higher min_samples_leaf, lower max_depth) or get more data.")
+    elif gap < -0.02:
+        print("   Note: Test score is higher than CV score. This can happen with small datasets or lucky splits.")
     else:
-         class_name = "Model Output"
+        print("   SUCCESS: The gap is small (<10%). The model generalizes well.")
 
-print(f"   Visualizing Feature Importance for: {class_name}")
-shap.summary_plot(vals_to_plot, X_shap, show=False)
-plt.title(f"SHAP Feature Importance for '{class_name}'")
-plt.show()
 
-print("   (Blue = Low feature value, Red = High feature value)")
-print("   Example: If 'acc_y_std' is Red and SHAP is positive, it means High Y-Variance increases probability of this class.")
+    # --- 3. Overfitting Check 2: Learning Curves ---
+    print("\n3. Overfitting Check 2: Learning Curves Analysis")
+    print("   Generating Learning Curves... (This helps visualize Bias vs Variance)")
 
-# Questions
-print("\n--- Questions to Answer (Task 7) ---")
-print("a) Did Ensemble help?")
-print(f"   Ensemble Acc: {ens_acc:.4f}. It combines strengths of different algorithms.")
+    train_sizes, train_scores, validation_scores = learning_curve(
+        estimator=best_model,
+        X=X_train,
+        y=y_train,
+        train_sizes=np.linspace(0.1, 1.0, 5),
+        cv=5,
+        scoring='accuracy',
+        n_jobs=-1
+    )
 
-print("b) Why SHAP?")
-print("   It explains 'Black Box' models. We can now tell the user EXACTLY which motion feature triggered the detection.")
+    train_scores_mean = np.mean(train_scores, axis=1)
+    train_scores_std = np.std(train_scores, axis=1)
+    validation_scores_mean = np.mean(validation_scores, axis=1)
+    validation_scores_std = np.std(validation_scores, axis=1)
+
+    plt.figure(figsize=(10, 6))
+    plt.title("Learning Curves (Random Forest)")
+    plt.xlabel("Training Examples")
+    plt.ylabel("Accuracy Score")
+    plt.ylim(0.0, 1.1)
+
+    plt.grid()
+
+    plt.fill_between(train_sizes, train_scores_mean - train_scores_std,
+                     train_scores_mean + train_scores_std, alpha=0.1, color="r")
+    plt.fill_between(train_sizes, validation_scores_mean - validation_scores_std,
+                     validation_scores_mean + validation_scores_std, alpha=0.1, color="g")
+
+    plt.plot(train_sizes, train_scores_mean, 'o-', color="r", label="Training score")
+    plt.plot(train_sizes, validation_scores_mean, 'o-', color="g", label="Cross-validation score")
+
+    plt.legend(loc="best")
+    plt.show()
+
+    print("   Interpretation:")
+    print("   - Grid Search finds the best parameters.")
+    print("   - Gap Check ensures numeric stability.")
+    print("   - Learning Curves show if adding more data helps.")
+    print("     * If Training Score is high but CV Score is low (Large Gap) -> Overfitting (High Variance).")
+    print("     * If Both scores are low -> Underfitting (High Bias).")
+    print("     * If Both scores converge to a high number -> Good Fit.")
+
+    # --- Save Model ---
+    os.makedirs('models', exist_ok=True)
+    model_path = 'models/best_model.pkl'
+    joblib.dump(best_model, model_path)
+    print(f"\n   Optimized model saved to: {model_path}")
+
+else:
+    print("Skipping execution because X_train is not defined.")
