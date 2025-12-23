@@ -1,0 +1,83 @@
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
+    <div class="jp-Cell-inputWrapper" tabindex="0">
+        <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+        </div>
+        <div class="jp-InputArea jp-Cell-inputArea">
+            <div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+                <h2>Part 8: Real-Time Testing System</h2>
+                <p>This section demonstrates the live deployment of the trained model using a WebSocket-based
+                    architecture for low-latency inference.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
+    <div class="jp-Cell-inputWrapper" tabindex="0">
+        <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+        </div>
+        <div class="jp-InputArea jp-Cell-inputArea">
+            <div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+                <h3>1. System Architecture</h3>
+                <ul>
+                    <li><strong>📱 Mobile Phone (Sensor Website):</strong> Collects accelerometer data and sends it via
+                        secure WebSocket.</li>
+                    <li><strong>🖥️ PC (Streamlit Viewer):</strong> Receives real-time data, runs the classification
+                        model, and visualizes results.</li>
+                    <li><strong>💾 CSV Recording:</strong> Optional features to buffer and save session data for
+                        analysis.</li>
+                </ul>
+
+                <h3>2. Key Technical Improvements</h3>
+                <ul>
+                    <li><strong>WebSocket Protocol:</strong> Replaced HTTP POST to eliminate request overhead (< 100ms
+                            latency).</li>
+                    <li><strong>SSL/HTTPS:</strong> Implemented self-signed certificates to access mobile sensor APIs.
+                    </li>
+                    <li><strong>UDP Forwarding:</strong> Used for fast local network data transfer between components.
+                    </li>
+                    <li><strong>Dynamic Confidence:</strong> Model certainty ranges from 75% to 99% based on signal
+                        clarity.</li>
+                </ul>
+
+                <h3>3. CSV Recording Features</h3>
+                <ul>
+                    <li>Toggle recording on/off dynamically during the session.</li>
+                    <li>Real-time buffer counter display (limit: 50,000 samples).</li>
+                    <li>Automatic timestamping for every sample.</li>
+                    <li>activity predictions included in the downloaded CSV.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Image Placeholders -->
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell">
+    <div class="jp-Cell-inputWrapper" tabindex="0">
+        <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser">
+        </div>
+        <div class="jp-InputArea jp-Cell-inputArea">
+            <div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
+                <h3>System GUI Overview</h3>
+                <p>Below are the views for the PC Dashboard and the Mobile Sensor Interface.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" style="text-align: center;">
+    <!-- PC View -->
+    <div style="padding: 10px; margin: 10px auto; width: 90%;">
+        <h4 style="margin-top: 0;">🖥️ PC Dashboard View</h4>
+        <img src="pcgui.png" alt="PC Dashboard"
+            style="width: 100%; height: auto; border: 1px solid #ddd; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+    </div>
+
+    <!-- Mobile View -->
+    <div style="padding: 10px; margin: 10px auto; width: 25%;">
+        <h4 style="margin-top: 0;">📱 Mobile Sensor View</h4>
+        <img src="mobilegui.png" alt="Mobile View"
+            style="width: 100%; height: auto; border: 1px solid #ddd; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+    </div>
+</div>
