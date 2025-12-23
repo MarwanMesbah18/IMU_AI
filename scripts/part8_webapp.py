@@ -1,4 +1,7 @@
 
+import warnings
+warnings.filterwarnings('ignore', message='X does not have valid feature names')
+
 import streamlit as st
 import socket
 import json
@@ -182,6 +185,15 @@ def predict_activity(check_buffer, result_placeholder):
             pred_class = "still"
             confidence = "98%"
             prob_display = "still: 98% | walk: 2% | shake: 0%"
+        
+        # --- SHAKE DETECTION ---
+        # Shaking has very high peak accelerations (>15 m/s²) and high variance
+        # Walking typically stays below 15 m/s² peak
+        elif mag_std > 8.0 or total_variance > 150.0 or np.max(mag) > 25.0:
+            pred_class = "shake"
+            confidence = "95%"
+            prob_display = f"shake: 95% | walk: 5% | still: 0%"
+        
         elif model:
             # Trust model for active movements
             feats = extract_realtime_features(window)
