@@ -164,8 +164,11 @@ def predict_activity(check_buffer, result_placeholder):
             
             if recent_total_var < 0.1:  # Very stable
                 pred_class = "still"
-                confidence = "99%"
-                prob_display = "still: 99% | walk: 1% | shake: 0%"
+                # Dynamic confidence based on how stable
+                still_conf = min(99, int(95 + (0.1 - recent_total_var) * 40))
+                walk_conf = max(1, 100 - still_conf)
+                confidence = f"{still_conf}%"
+                prob_display = f"still: {still_conf}% | walk: {walk_conf}% | shake: 0%"
                 
                 result_placeholder.markdown(
                     f"""<div class='metric-card'>
@@ -183,16 +186,23 @@ def predict_activity(check_buffer, result_placeholder):
         # Smart threshold logic (TUNED FOR SENSITIVITY)
         if mag_std < 0.6 and total_variance < 3.0:
             pred_class = "still"
-            confidence = "98%"
-            prob_display = "still: 98% | walk: 2% | shake: 0%"
+            # Dynamic confidence: lower variance = higher confidence
+            still_conf = min(98, int(85 + (3.0 - total_variance) * 4))
+            walk_conf = max(2, 100 - still_conf)
+            confidence = f"{still_conf}%"
+            prob_display = f"still: {still_conf}% | walk: {walk_conf}% | shake: 0%"
         
         # --- SHAKE DETECTION ---
         # Shaking has very high peak accelerations (>15 m/s²) and high variance
         # Walking typically stays below 15 m/s² peak
         elif mag_std > 8.0 or total_variance > 150.0 or np.max(mag) > 25.0:
             pred_class = "shake"
-            confidence = "95%"
-            prob_display = f"shake: 95% | walk: 5% | still: 0%"
+            # Dynamic confidence based on intensity
+            shake_intensity = max(mag_std / 15.0, total_variance / 300.0, np.max(mag) / 40.0)
+            shake_conf = min(99, int(75 + shake_intensity * 24))
+            walk_conf = max(1, 100 - shake_conf)
+            confidence = f"{shake_conf}%"
+            prob_display = f"shake: {shake_conf}% | walk: {walk_conf}% | still: 0%"
         
         elif model:
             # Trust model for active movements
@@ -251,10 +261,11 @@ def run_live_stream():
                 </div>
             """, unsafe_allow_html=True)
         
-        # Show buffer size
+        # Show buffer size (placeholder for real-time updates)
+        buffer_count_placeholder = st.empty()
         if 'csv_buffer' in st.session_state:
             buffer_size = len(st.session_state.csv_buffer)
-            st.caption(f"Buffer: {buffer_size:,} samples")
+            buffer_count_placeholder.caption(f"Buffer: {buffer_size:,} samples")
             
             if buffer_size >= MAX_CSV_BUFFER:
                 st.warning("⚠️ Buffer full! Data may be lost.")
@@ -419,8 +430,9 @@ def run_live_stream():
                 
                 st.session_state.last_ui_update = current_time
                 
-                # Determine recording status
+                # Determine recording status and buffer count
                 rec_status = "🔴 RECORDING" if recording else "⚪ Not Recording"
+                buffer_count = len(st.session_state.csv_buffer) if 'csv_buffer' in st.session_state else 0
                 
                 debug_placeholder.markdown(
                     f"""
@@ -428,7 +440,8 @@ def run_live_stream():
                     <b>Status:</b> 🟢 Receiving<br>
                     <b>Packets:</b> {st.session_state.packet_count}<br>
                     <b>Latest:</b> X: {current_x:.2f} Y: {current_y:.2f} Z: {current_z:.2f}<br>
-                    <b>Recording:</b> {rec_status}
+                    <b>Recording:</b> {rec_status}<br>
+                    <b>Recorded:</b> {buffer_count:,} samples
                     </div>
                     """, unsafe_allow_html=True
                 )
