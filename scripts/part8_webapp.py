@@ -7,6 +7,7 @@ import pandas as pd
 import joblib
 import time
 import atexit
+from datetime import datetime
 from scipy.fft import fft, fftfreq
 
 # --- CONFIGURATION ---
@@ -14,7 +15,8 @@ HOST = '0.0.0.0'
 PORT = 65432
 MODEL_PATH = 'models/best_model.pkl'
 WINDOW_SIZE = 100
-OVERLAP = 90  # Keep 90% (Side by 10) = predict every 0.2s (5Hz) -> Very Responsive
+OVERLAP = 90  # Keep 90% (Slide by 10) = predict every 0.2s (5Hz) -> Very Responsive
+MAX_CSV_BUFFER = 50000  # Limit CSV buffer to prevent memory issues
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -41,6 +43,21 @@ st.markdown("""
         font-size: 40px;
         font-weight: bold;
         color: #00ff41;
+    }
+    .recording-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px;
+        background-color: #ff4444;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -118,9 +135,12 @@ def extract_realtime_features(window_data):
     
     return features.reshape(1, -1)
 
-# --- PREDICTION LOGIC (Used by both modes) ---
+# --- PREDICTION LOGIC ---
 def predict_activity(check_buffer, result_placeholder):
     window = check_buffer[-WINDOW_SIZE:]
+    pred_class = "unknown"
+    confidence = "N/A"
+    
     try:
         # Calculate movement metrics
         window_arr = np.array(window)
@@ -134,13 +154,12 @@ def predict_activity(check_buffer, result_placeholder):
         
         # --- RAPID STILL DETECTION ---
         # Look at only the last 0.5s (25 samples)
-        # If this short window is stable, override previous movement history.
         if len(window_arr) >= 25:
             recent_window = window_arr[-25:]
             recent_var = np.var(recent_window, axis=0)
             recent_total_var = np.sum(recent_var)
             
-            if recent_total_var < 0.1: # Increased from 0.05 (Less Sensitive to jitter)
+            if recent_total_var < 0.1:  # Very stable
                 pred_class = "still"
                 confidence = "99%"
                 prob_display = "still: 99% | walk: 1% | shake: 0%"
@@ -156,10 +175,9 @@ def predict_activity(check_buffer, result_placeholder):
                        </div>""", 
                     unsafe_allow_html=True
                 )
-                return
+                return pred_class
         
         # Smart threshold logic (TUNED FOR SENSITIVITY)
-        # Increased thresholds to avoid false "Walk" on small moves
         if mag_std < 0.6 and total_variance < 3.0:
             pred_class = "still"
             confidence = "98%"
@@ -175,7 +193,6 @@ def predict_activity(check_buffer, result_placeholder):
                 max_prob = max(proba)
                 confidence = f"{max_prob*100:.0f}%"
                 class_probs = {model.classes_[i]: f"{proba[i]*100:.0f}%" for i in range(len(model.classes_))}
-                # Reorder for consistent display if possible, or just join
                 prob_display = " | ".join([f"{k}: {v}" for k, v in class_probs.items()])
             except:
                 confidence = "N/A"
@@ -196,16 +213,65 @@ def predict_activity(check_buffer, result_placeholder):
                </div>""", 
             unsafe_allow_html=True
         )
+        return pred_class
     except Exception as e:
         result_placeholder.markdown(f"<div style='color: red'>Error: {str(e)}</div>", unsafe_allow_html=True)
+        return "error"
 
 
 # --- LIVE STREAM MODE ---
 def run_live_stream():
     # --- SIDEBAR ---
     with st.sidebar:
-        st.title("Settings")
+        st.title("⚙️ Settings")
         server_running = st.toggle("🔴 Start Live Server", value=False)
+        
+        st.divider()
+        
+        # --- CSV RECORDING CONTROLS ---
+        st.subheader("📹 Recording")
+        recording = st.toggle("Record Data", value=False, key="recording_toggle")
+        
+        if recording:
+            st.markdown("""
+                <div style='background-color: #ff4444; padding: 8px; border-radius: 5px; text-align: center;'>
+                    🔴 REC
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Show buffer size
+        if 'csv_buffer' in st.session_state:
+            buffer_size = len(st.session_state.csv_buffer)
+            st.caption(f"Buffer: {buffer_size:,} samples")
+            
+            if buffer_size >= MAX_CSV_BUFFER:
+                st.warning("⚠️ Buffer full! Data may be lost.")
+        
+        # Download button
+        if 'csv_buffer' in st.session_state and len(st.session_state.csv_buffer) > 0:
+            st.divider()
+            st.subheader("💾 Export Data")
+            
+            # Generate CSV
+            df_export = pd.DataFrame(st.session_state.csv_buffer)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"imu_recording_{timestamp}.csv"
+            
+            csv_data = df_export.to_csv(index=False)
+            
+            st.download_button(
+                label=f"📥 Download CSV ({len(df_export)} rows)",
+                data=csv_data,
+                file_name=filename,
+                mime="text/csv",
+                key="download_csv"
+            )
+            
+            if st.button("🗑️ Clear Buffer"):
+                st.session_state.csv_buffer = []
+                st.rerun()
+        
+        st.divider()
         
         # Try to find local IP
         try:
@@ -248,6 +314,7 @@ def run_live_stream():
     # Session State Init
     if 'buffer' not in st.session_state: st.session_state.buffer = []
     if 'plot_buffer' not in st.session_state: st.session_state.plot_buffer = []
+    if 'csv_buffer' not in st.session_state: st.session_state.csv_buffer = []
     if 'packet_count' not in st.session_state: st.session_state.packet_count = 0
     if 'last_ui_update' not in st.session_state: st.session_state.last_ui_update = 0
 
@@ -258,7 +325,7 @@ def run_live_stream():
         try:
             st.session_state.sock.bind((HOST, PORT))
         except OSError as e:
-            st.error(f"Error: Port {PORT} is occupied.")
+            st.error(f"Error: Port {PORT} is occupied. Please restart the app.")
             st.stop()
         st.session_state.sock.setblocking(False)
         
@@ -271,105 +338,109 @@ def run_live_stream():
 
     if server_running:
         current_x, current_y, current_z = 0.0, 0.0, 0.0
-        # print("🚀 Server Loop Running")  # Commented to reduce log spam
+        current_prediction = "waiting..."
         
-        # Non-blocking loop simulation using Streamlit's rerun capability is tricky.
-        # But for "Simple Mode", a while Loop is acceptable IF user knows it blocks UI navigation.
-        # To make it stoppable, we check server_running every iter.
-        
-        # Better: Use a placeholder for the "Stop" warning
         st.caption("Press 'Stop' in sidebar to pause server.")
         
         while True:
             if not server_running: break
 
-            # 1. Receive
-            try:
-                data, addr = st.session_state.sock.recvfrom(4096)
-                has_data = True
-            except BlockingIOError:
-                has_data = False
-                time.sleep(0.01)
-            except Exception as e:
-                # print(f"Socket error: {e}")
-                has_data = False
-                time.sleep(0.1)
-
-            if has_data:
+            # 1. Receive - drain the socket queue
+            packets_received = 0
+            max_packets_per_loop = 10  # Process multiple packets per loop to avoid backlog
+            
+            for _ in range(max_packets_per_loop):
                 try:
-                    msg = data.decode('utf-8')
-                    # Parse
-                    try:
-                        j = json.loads(msg)
-                        x, y, z = j.get('acc_x', 0), j.get('acc_y', 0), j.get('acc_z', 0)
-                        if x==0 and y==0 and z==0:
-                             x, y, z = j.get('x', 0), j.get('y', 0), j.get('z', 0)
-                    except:
-                        parts = msg.split(',')
-                        if len(parts) >= 3:
-                            x, y, z = float(parts[0]), float(parts[1]), float(parts[2])
-                        else:
-                            x, y, z = 0, 0, 0
-                    
-                    if not (np.isfinite(x) and np.isfinite(y) and np.isfinite(z)):
-                        print(f"⚠️ Invalid Data detected: {x}, {y}, {z} -> Replacing with 0")
-                        x, y, z = 0.0, 0.0, 0.0
-                    
-                    LIMIT_VAL = 200.0
-                    x = max(-LIMIT_VAL, min(LIMIT_VAL, x))
-                    y = max(-LIMIT_VAL, min(LIMIT_VAL, y))
-                    z = max(-LIMIT_VAL, min(LIMIT_VAL, z))
-
-                    if x == 0 and y == 0 and z == 0:
-                        # Optional: Don't plot pure zeros if they are error artifacts?
-                        # But for now let's just log it to see if this is the cause.
-                        # print("⚠️ All Zeros Packet") 
-                        pass
-
-                    # Buffer for inference
-                    st.session_state.buffer.append([x, y, z])
-                    
-                    # Buffer for Plotting
-                    st.session_state.plot_buffer.append({'x': x, 'y': y, 'z': z})
-                    if len(st.session_state.plot_buffer) > 200:
-                        st.session_state.plot_buffer.pop(0)
-                    
-                    current_x, current_y, current_z = x, y, z
-                    st.session_state.packet_count += 1
-                    
-                    # Debug Print every 50 packets
-                    if st.session_state.packet_count % 50 == 0:
-                        print(f"Rx: {x:.2f}, {y:.2f}, {z:.2f}")
-
+                    data, addr = st.session_state.sock.recvfrom(4096)
+                    packets_received += 1
+                except BlockingIOError:
+                    break  # No more data in queue
                 except Exception as e:
-                    print(f"Process Error: {e}")
+                    break
 
-            # 2. Update UI
+                if data:
+                    try:
+                        msg = data.decode('utf-8')
+                        # Parse
+                        try:
+                            j = json.loads(msg)
+                            x, y, z = j.get('acc_x', 0), j.get('acc_y', 0), j.get('acc_z', 0)
+                            if x==0 and y==0 and z==0:
+                                 x, y, z = j.get('x', 0), j.get('y', 0), j.get('z', 0)
+                        except:
+                            parts = msg.split(',')
+                            if len(parts) >= 3:
+                                x, y, z = float(parts[0]), float(parts[1]), float(parts[2])
+                            else:
+                                x, y, z = 0, 0, 0
+                        
+                        # Validate data
+                        if not (np.isfinite(x) and np.isfinite(y) and np.isfinite(z)):
+                            x, y, z = 0.0, 0.0, 0.0
+                        
+                        # Clamp extreme values
+                        LIMIT_VAL = 200.0
+                        x = max(-LIMIT_VAL, min(LIMIT_VAL, x))
+                        y = max(-LIMIT_VAL, min(LIMIT_VAL, y))
+                        z = max(-LIMIT_VAL, min(LIMIT_VAL, z))
+
+                        # Buffer for inference
+                        st.session_state.buffer.append([x, y, z])
+                        
+                        # Buffer for Plotting
+                        st.session_state.plot_buffer.append({'x': x, 'y': y, 'z': z})
+                        if len(st.session_state.plot_buffer) > 200:
+                            st.session_state.plot_buffer.pop(0)
+                        
+                        current_x, current_y, current_z = x, y, z
+                        st.session_state.packet_count += 1
+
+                    except Exception as e:
+                        pass  # Silently handle parse errors
+
+            # 2. Update UI (rate limited)
             current_time = time.time()
-            if current_time - st.session_state.last_ui_update >= 0.1:
+            if current_time - st.session_state.last_ui_update >= 0.1:  # 10Hz UI updates
                 if st.session_state.plot_buffer:
                     df_plot = pd.DataFrame(st.session_state.plot_buffer)
                     chart_placeholder.line_chart(df_plot)
                 
                 st.session_state.last_ui_update = current_time
                 
+                # Determine recording status
+                rec_status = "🔴 RECORDING" if recording else "⚪ Not Recording"
+                
                 debug_placeholder.markdown(
                     f"""
                     <div style='background-color: #262730; padding: 10px; border-radius: 5px; font-size: 0.8em;'>
                     <b>Status:</b> 🟢 Receiving<br>
                     <b>Packets:</b> {st.session_state.packet_count}<br>
-                    <b>Latest:</b> X: {current_x:.2f} Y: {current_y:.2f} Z: {current_z:.2f}
+                    <b>Latest:</b> X: {current_x:.2f} Y: {current_y:.2f} Z: {current_z:.2f}<br>
+                    <b>Recording:</b> {rec_status}
                     </div>
                     """, unsafe_allow_html=True
                 )
             
             # 3. Predict
             if len(st.session_state.buffer) >= WINDOW_SIZE:
-                predict_activity(st.session_state.buffer, activity_placeholder)
+                current_prediction = predict_activity(st.session_state.buffer, activity_placeholder)
+                
+                # Record to CSV if enabled
+                if recording and len(st.session_state.csv_buffer) < MAX_CSV_BUFFER:
+                    # Record the last data point with prediction
+                    st.session_state.csv_buffer.append({
+                        'timestamp': datetime.now().isoformat(),
+                        'acc_x': current_x,
+                        'acc_y': current_y,
+                        'acc_z': current_z,
+                        'prediction': current_prediction
+                    })
+                
                 # Slide Window
                 st.session_state.buffer = st.session_state.buffer[-OVERLAP:]
             
-            time.sleep(0.02)
+            # Small sleep to prevent CPU overload
+            time.sleep(0.01)
     else:
         st.warning("Server is STOPPED. Toggle 'Start Live Server' in the sidebar to begin.")
 

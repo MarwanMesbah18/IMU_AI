@@ -26,6 +26,7 @@ def print_banner():
     """Print a nice banner with project info."""
     print("\n" + "="*70)
     print("  🚀 IMU Activity Recognition System")
+    print("     WebSocket Edition with CSV Recording")
     print("="*70)
 
 def print_connection_info(ip):
@@ -43,6 +44,11 @@ def print_connection_info(ip):
     
     print("\n" + "-" * 70)
     print("⚠️  IMPORTANT: Ensure phone & PC are on the SAME Wi-Fi network")
+    print("-" * 70)
+    print("\n💡 NEW FEATURES:")
+    print("   • WebSocket for faster data (no more delays!)")
+    print("   • Toggle 'Record Data' to save readings")
+    print("   • Click 'Download CSV' to export when done")
     print("-" * 70 + "\n")
 
 def check_venv():
